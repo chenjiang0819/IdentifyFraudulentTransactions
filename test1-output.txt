@@ -1,0 +1,25 @@
+=========================Stage 1=========================
+Card ID: ceww0p66
+Daily limit: 150
+Transaction limit: 100
+
+=========================Stage 2=========================
+Number of credit cards: 3
+Average daily limit: 118.33
+Card with the largest transaction limit: eeww0p22
+
+=========================Stage 3=========================
+v5buvljyh0lg
+1yuy3noa2uxu
+gl3utnnwxf49
+9mopqy3snk3h
+6hjqaydtmrq5
+mlgtqk8oo74e
+
+=========================Stage 4=========================
+v5buvljyh0lg             IN_BOTH_LIMITS
+1yuy3noa2uxu             IN_BOTH_LIMITS
+gl3utnnwxf49             OVER_DAILY_LIMIT
+9mopqy3snk3h             OVER_DAILY_LIMIT
+6hjqaydtmrq5             OVER_BOTH_LIMITS
+mlgtqk8oo74e             IN_BOTH_LIMITS
