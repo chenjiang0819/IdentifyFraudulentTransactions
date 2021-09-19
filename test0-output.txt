@@ -1,0 +1,33 @@
+=========================Stage 1=========================
+Card ID: 3tu2iywy
+Daily limit: 10000
+Transaction limit: 800
+
+=========================Stage 2=========================
+Number of credit cards: 5
+Average daily limit: 4030.00
+Card with the largest transaction limit: 3tu2iywy
+
+=========================Stage 3=========================
+v5buvljyh0lg
+1yuy3noa2uxu
+gl3utnnwxf49
+9mopqy3snk3h
+6hjqaydtmrq5
+mlgtqk8oo74e
+u7s604f0u6bz
+2siil57yqe5k
+vzdg2z09t7zp
+n6lcvjyrhvwt
+
+=========================Stage 4=========================
+v5buvljyh0lg             IN_BOTH_LIMITS
+1yuy3noa2uxu             IN_BOTH_LIMITS
+gl3utnnwxf49             IN_BOTH_LIMITS
+9mopqy3snk3h             IN_BOTH_LIMITS
+6hjqaydtmrq5             IN_BOTH_LIMITS
+mlgtqk8oo74e             OVER_DAILY_LIMIT
+u7s604f0u6bz             IN_BOTH_LIMITS
+2siil57yqe5k             OVER_TRANS_LIMIT
+vzdg2z09t7zp             OVER_BOTH_LIMITS
+n6lcvjyrhvwt             OVER_TRANS_LIMIT
