@@ -1,12 +1,15 @@
 /* Anti-credit card fraud:
  *
- * This code is written by Chen Jiang, StudentID:REDACTED_STUDENT_ID
+ * This code is written by Chen Jiang, original coursework implementation
  *  
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <errno.h>
+#include <limits.h>
+#include <ctype.h>
 
 #define STAGE_NUM_ONE 1						/* stage numbers */ 
 #define STAGE_NUM_TWO 2
@@ -32,7 +35,8 @@ typedef struct{
 	char card_ID[CARDID_LENTH+ADD_FOR_STOP];
 	int day_limit;
 	int tran_limit;
-	int  accumulative;
+	long long accumulative;
+    int last_year, last_month, last_day;
 }creditcard_t;
 
 typedef struct{
@@ -93,7 +97,7 @@ void stage_four(detective_t *info, int size);
 
 /****************************************************************/
 /* main function controls all the action*/
-int main(int argc, char *argv[]){
+int main(void){
    /*read the credit cards*/
    creditcard_t card_arry[MAX_CARD];
    int card_count = 0;
@@ -107,12 +111,13 @@ int main(int argc, char *argv[]){
    list_t *list;
    list = make_empty_list();
    /*read the transactions*/
-   read_transaction(list,&trans_count,card_arry,card_count);
-   /*qsort the cardIDs for the wider usability*/
+   /* Sort before the original binary-search-based limit checks. */
    qsort(card_arry, card_count, sizeof(creditcard_t), compare_card_content);
+   read_transaction(list,&trans_count,card_arry,card_count);
    /* for initialise an arry, we need a const value*/
    const int size = trans_count;
-   detective_t info[size];
+   detective_t *info = size ? malloc((size_t)size * sizeof(*info)) : NULL;
+   if (size && !info) { free_list(list); return EXIT_FAILURE; }
    get_trans(info,list);
 
    stage_three(info,size);
@@ -120,58 +125,74 @@ int main(int argc, char *argv[]){
 
    /* free memories*/
    free_list(list);
+   free(info);
    list = NULL;
    return 0;
 }
 
 /****************************************************************/
+/* Bound records before parsing; reject truncation and integer overflow. */
+static int read_line(char *line, size_t size) {
+    if (!fgets(line, (int)size, stdin)) return ferror(stdin) ? -1 : 0;
+    if (!strchr(line, '\n') && !feof(stdin)) return -1;
+    return 1;
+}
+
+static int nonnegative_integer(const char *text, int *value) {
+    char *end;
+    errno = 0;
+    if (!*text || !isdigit((unsigned char)*text)) return 0;
+    long n = strtol(text, &end, 10);
+    if (errno || *end || n < 0 || n > INT_MAX) return 0;
+    *value = (int)n;
+    return 1;
+}
+
+static int identifier(const char *text, size_t length) {
+    if (strlen(text) != length) return 0;
+    for (size_t i=0; i<length; i++) if (!isalnum((unsigned char)text[i])) return 0;
+    return 1;
+}
+
+static int valid_time(const char *text, time_t *when) {
+    if (strlen(text) != 19) return 0;
+    for (int i=0; i<19; i++) {
+        if (i==4 || i==7 || i==10 || i==13 || i==16) { if (text[i]!=':') return 0; }
+        else if (!isdigit((unsigned char)text[i])) return 0;
+    }
+    if (sscanf(text, "%4d:%2d:%2d:%2d:%2d:%2d", &when->year, &when->month,
+        &when->day, &when->hour, &when->minute, &when->seconds) != 6) return 0;
+    int days[] = {31,28,31,30,31,30,31,31,30,31,30,31};
+    if (when->year<1 || when->month<1 || when->month>12 || when->hour>23 ||
+        when->minute>59 || when->seconds>59) return 0;
+    if (when->year%4==0 && (when->year%100!=0 || when->year%400==0)) days[1]=29;
+    return when->day>=1 && when->day<=days[when->month-1];
+}
+
 /*read the cards*/
-void read_card(creditcard_t card_arry[MAX_CARD],int *count){
-	int c;
-	int i = 0;
-	int swich = 0;
-	int num = 0;
-	/* stop at %, 
-	since there are just alphanumeric characters in the CardID*/	
-	while((c = getchar())!= '%') {
-		if(c == '\n'){
-			/* count the cards we input*/
-				card_arry[*count].accumulative = 0;
-				card_arry[(*count)++].card_ID[i] = '\0'; 
-				i = 0;
-			    swich = 0;
-		}else{ 
-			if(c == ' '){
-				num = 0;
-				swich++;
-			}else{
-				/* read the card ID*/
-				if(swich == 0){
-					card_arry[*count].card_ID[i++] = c;
-				/* read the daily limit*/
-				}else if(swich == 1){
-					int toint = c-'0';
-					num = num*10+toint;
-					card_arry[*count] . day_limit = num;
-				/* read the transaction limit*/
-				}else if(swich == 2){
-					int toint = c-'0';
-					num = num*10+toint;
-					card_arry[*count] . tran_limit = num;
-				}	
-			}	
-		}		
-	}
-	/* if the number of cards is too big, system will exit */	
-		if(*count > MAX_CARD){
-			printf("Invalid input, toooooooo many cards.\n");
-			exit(EXIT_FAILURE);
-		}
-	/* if the number of cards is less than 1, system will exit */	
-		if(*count < MIN_CARD){
-			printf("Invalid input, there is no card.\n");
-			exit(EXIT_FAILURE);
-		}
+void read_card(creditcard_t card_arry[MAX_CARD], int *count){
+    char line[256], id[64], daily[64], limit[64], extra;
+    int result, separator=0;
+    while ((result=read_line(line, sizeof(line))) == 1) {
+        if (line[0]=='%') {
+            size_t n=strspn(line, "%");
+            if (line[n]!='\n' && line[n]!='\r' && line[n]!='\0') break;
+            separator=1; break;
+        }
+        if (*count>=MAX_CARD || sscanf(line, "%63s %63s %63s %c", id,daily,limit,&extra)!=3 ||
+            !identifier(id,CARDID_LENTH)) break;
+        creditcard_t card = {0};
+        if (!nonnegative_integer(daily,&card.day_limit) || !nonnegative_integer(limit,&card.tran_limit)) break;
+        for (int i=0; i<*count; i++) if (!strcmp(card_arry[i].card_ID,id)) {
+            fprintf(stderr,"Invalid input: duplicate card identifier\n"); exit(EXIT_FAILURE);
+        }
+        strcpy(card.card_ID,id);
+        card_arry[(*count)++]=card;
+    }
+    if (!separator || result<0 || *count<MIN_CARD) {
+        fprintf(stderr,"Invalid input: expected bounded card records followed by %% separator\n");
+        exit(EXIT_FAILURE);
+    }
 }	
 
 /* compare the card IDs for quiking sort and binary search */
@@ -195,7 +216,7 @@ int binary_search(creditcard_t A[], int lo, int hi,
 	mid = (lo+hi)/2;
 	if((outcome = compare_card_content(key, A+mid)) < 0){
 	/* use recursive to impliment the binary search */	
-		return binary_search(A, lo, mid, key, locn);
+		return binary_search(A, lo, mid-1, key, locn);
 	}else if(outcome > 0){
 		return binary_search(A, mid+1, hi, key, locn);
 	}else{
@@ -206,99 +227,49 @@ int binary_search(creditcard_t A[], int lo, int hi,
 
 /* check the status of the each transcation*/
 int check_status(transation_t *new, creditcard_t *card_arry, int count){
-	int checkdaylim = NOBRK ;
-	int checktranlim = NOBRK ;
-	static int year;
-	static int month;
-	static int day;
-	int locn = 0;
-	/* read the current card ID of the credit card*/
-	creditcard_t* newcard = (creditcard_t*)malloc(sizeof(creditcard_t));
-	strncpy (newcard->card_ID, new-> card_ID, CARDID_LENTH);
-	binary_search(card_arry, 0, count-1, newcard, &locn);
-	int trantest = card_arry[locn].tran_limit;
-	/* reset the day spending*/
-	if(year != (new->time).year || month != (new->time).month 
-        || day != (new->time).day){
-		year = (new->time).year;
-		month = (new->time).month;
-		day = (new->time).day;
-		card_arry[locn].accumulative = new->amount;
-	}else{
-		card_arry[locn].accumulative = card_arry[locn].accumulative+new->amount;
-	}
-	/* identify the status of this transcation*/
-	if(card_arry[locn].day_limit - card_arry[locn].accumulative < 0){
-		checkdaylim = BRKDAY;
-	}
-	if((trantest - (new->amount)) < 0){
-		checktranlim = BRKTRAN;
-	}	
-	free(newcard);
-	newcard = NULL;
-	return checkdaylim + checktranlim;
+    int locn;
+    creditcard_t key = {0};
+    strcpy(key.card_ID,new->card_ID);
+    if (!binary_search(card_arry,0,count-1,&key,&locn)) return -1;
+    creditcard_t *card = &card_arry[locn];
+    if (card->last_year!=new->time.year || card->last_month!=new->time.month || card->last_day!=new->time.day) {
+        long previous=(long)card->last_year*10000+card->last_month*100+card->last_day;
+        long current=(long)new->time.year*10000+new->time.month*100+new->time.day;
+        if (current<previous) return -1;
+        card->accumulative=0;
+        card->last_year=new->time.year; card->last_month=new->time.month; card->last_day=new->time.day;
+    }
+    card->accumulative+=new->amount;
+    return (card->accumulative>card->day_limit ? BRKDAY : NOBRK) +
+           (new->amount>card->tran_limit ? BRKTRAN : NOBRK);
 }
 
 /*read the transactions*/
-void read_transaction(list_t *list, int *count, 
-    creditcard_t *card_arry, int cardcount){
-	int c;
-	int i;
-	int num;
-	int swich;
-	int newswich;
-	transation_t *new;
-	/*this infinite while loop will be stopped in the loop */
-    while(INFINITE){
-    	c = getchar();
-		if(c == '\n'||c == EOF){
-			if(swich == 3){
-				/* check the status of this transcation */
-				new->status = check_status(new, card_arry, cardcount);
-				/* pack the nodes */
-				new->next = NULL;
-				if(list->foot==NULL){
-					/* this is the first insertion into the list */
-					list->head = list->foot = new;
-				}else{
-					list->foot->next = new;
-					list->foot = new;
-				}
-				(*count)++;
-			}
-			/* stop the loop when we read EOF*/
-			if(c == EOF){
-				break;
-			}
-			/* apply a memory space for the current node*/
-			new = (transation_t*)malloc(sizeof(*new));
-			assert(list!=NULL && new!=NULL);
-			swich = 0;
-			newswich = 0;
-			i = 0;
-		}else if(c != '%'){ 
-			if(c == ' '){
-				i = 0;
-				num = 0;
-				swich++;
-			}else{
-				/* read the transaction ID*/
-				if(swich == 0){
-					new->transation_ID[i++] = c;
-				/* read the card ID */
-				}else if(swich == 1){
-					new->card_ID[i++] = c;
-				/* read the transaction time*/
-				}else if(swich == 2){
-					time_recoder(c,&num, new, &newswich);
-				}else if(swich == 3){
-					int toint = c-'0';
-					num = num*10+toint;
-					new->amount= num;
-				}	
-			}
-		}		
-	}
+void read_transaction(list_t *list, int *count, creditcard_t *card_arry, int cardcount){
+    char line[256], id[64], card[64], timestamp[64], amount[64], extra;
+    int result;
+    while ((result=read_line(line,sizeof(line))) == 1) {
+        transation_t value = {0};
+        if (*count==INT_MAX || sscanf(line,"%63s %63s %63s %63s %c",id,card,timestamp,amount,&extra)!=4 ||
+            !identifier(id,TRANSID_LENTH) || !identifier(card,CARDID_LENTH) ||
+            !valid_time(timestamp,&value.time) || !nonnegative_integer(amount,&value.amount)) goto invalid;
+        for (transation_t *node=list->head; node; node=node->next)
+            if (!strcmp(node->transation_ID,id)) goto invalid;
+        strcpy(value.transation_ID,id); strcpy(value.card_ID,card);
+        value.status=check_status(&value,card_arry,cardcount);
+        if (value.status<0) goto invalid;
+        transation_t *node=malloc(sizeof(*node));
+        if (!node) goto invalid;
+        *node=value;
+        if (list->foot) list->foot->next=node; else list->head=node;
+        list->foot=node; (*count)++;
+    }
+    if (result<0) goto invalid;
+    return;
+invalid:
+    fprintf(stderr,"Invalid input: malformed, duplicate, unknown-card, or backward-date transaction\n");
+    free_list(list);
+    exit(EXIT_FAILURE);
 }
 
 /* record the times of the transcations */
@@ -362,7 +333,7 @@ void get_status(detective_t *detec,list_t *list, int num){
 list_t *make_empty_list(void){
 	list_t *list;
 	list = (list_t*)malloc(sizeof(*list));
-	assert(list != NULL);
+    if (!list) { fprintf(stderr,"Allocation failed\n"); exit(EXIT_FAILURE); }
 	list->head = list->foot = NULL;
 	return list;
 }
@@ -383,6 +354,7 @@ list_t *get_tail(list_t *list){
 		 /*the only list node just got deleted*/
 		list->foot = NULL;
 	}
+	free(oldhead);
 	return list;
 }
 
