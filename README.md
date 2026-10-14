@@ -1,5 +1,13 @@
 # Transaction Limit and Fraud Detection
 
+## Academic Context
+
+University: University of Melbourne  
+Course: Coursework; exact course number not independently established  
+Year: Exact original submission year not independently established  
+Project type: individual
+
+
 ## Overview
 
 A handwritten C coursework program that reads card limits and transaction records, then reports per-transaction daily and individual-limit violations.
